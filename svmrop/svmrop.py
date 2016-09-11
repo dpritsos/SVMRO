@@ -59,12 +59,23 @@ class LinearSetSVM(object):
         # Starting Greedy Optimization process
         min_Risk = np.Inf
         for near_pds, far_pds in (predicted_ds, pds_inv):
-            pass
+
+            # Moving Hyperplanes.
+
+            # Calculating Constraintes
+
+            # Calculating Opt
 
     def Rs():
         return (np.euclidiandistance(near_H) / np.sum(svm.predict(X[yp]))) +
         (np.sum(svm.predict(X[yp])) / np.euclidiandistance(near_H)) +
         pa * Va + pv * Vv
+
+    def Rem():
+        p = a
+        r = b
+        return (1.0 / 2*((p*r)/(p+r)))
+
 
 
 
