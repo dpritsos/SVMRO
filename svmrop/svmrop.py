@@ -18,17 +18,20 @@ class LinearSetSVM(object):
 
             kwargs['kernel'] != 'linear':
                 print "Warning: Only linear Kernel is supported in this SVM-extention method."
-                print "Auto-config kernel to Linear kernel."
-                kwargs['kernel'] = 'linear'
+                print "Auto-config params: penalty='l2', multi_class='ovr', dual='True'"
+                kwargs['penalty'] = 'l2'
+                kwargs['multi_class'] = 'ovr'
+                kwargs['dual'] = True
 
-                # kwargs['decision_function_shape'] = ’ovr’ <-- Consider it.
-
-            self.lsvm = svm.SVC(**kwargs)
+            self.lsvm = svm.LinearSVC(**kwargs)
 
         else:
             raise Exception("Invalid option for argument 'svm_type'")
 
     def optimize(self, l, a, b, X, yp, yn, yu):
+
+        # Making an array to matrix if not already.
+        X = np.matrix(X)
 
         # Training the Linear SVM, either one-class or binary
         if self.svm_type == 'oneclass':
@@ -47,10 +50,20 @@ class LinearSetSVM(object):
         # ...the Greedy Optimization that follows.
         min_ds = np.min(predicted_ds)
         max_ds = np.max(predicted_ds)
+        min_ds_i = np.argmin(predicted_ds)
+        max_ds_i = np.argmax(predicted_ds)
 
-        # Getting the Decition Hyperplane a.k.a Decision Function.
-        near_H = svm.libsvm.decision_function()
-        far_H = near_H + max_ds  # It is not working yet, it moves the near_H Hyperplane to max_ds.
+        # Getting the Decision Hyperplane's Normal vector.
+        N_vect = np.matrix(self.lsvm.coef_)
+
+        # Getting the Normal vector of the most distaned parrale hyperplane from the...
+        # ...decision hyperplane.
+        max_ds_x = X[max_ds_i, :]
+        proj_n_max_dsmpl = ((max_ds_x*N_vect.T) / np.linalg.norm(N_vect.T)) * N_vect
+        N_far = np.cross(proj_n_max_dsmpl, max_ds_x)
+
+        # Getting the intercept of the decision function, a.k.a the decision hyperplane.
+        incpt = lsvm.intercept_
 
         Rs = (np.euclidiandistance(near_H) / np.sum(svm.predict(X[yp]))) +
         (np.sum(svm.predict(X[yp])) / np.euclidiandistance(near_H)) +
