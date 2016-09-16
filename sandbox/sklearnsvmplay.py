@@ -4,7 +4,7 @@ import sklearn.svm as svm
 X = np.array(
     [[-1, -1, -3],
      [-2, -1, -8],
-     [10, 10, 10],
+     [10, -10, -1],
      [20, 10, 50]]
 )
 
@@ -13,7 +13,43 @@ y = np.array([0, 0, 1, 1])
 lsvm = svm.LinearSVC(penalty='l2', multi_class='ovr', dual=True)
 # lsvm = svm.SVC(kernel='linear', decision_function_shape='ovr')
 
-lsvm.fit(X, y)
+tX = lsvm.fit_transform(X, y)
+
+ds = lsvm.decision_function(X)
+az = np.where((ds >= 0))
+lz = np.where((ds <= 0))
+
+print np.hstack((ds[lz][::-1], [0], ds[az]))
+
+X_ds = np.hstack((ds[lz][::-1], [0], ds[az]))
+
+s1 = 50.0
+s2 = -1.0
+s3 = 15.0
+
+omega = X_ds[-1]
+alpha = ds[lz][0]
+
+print 'Omega', omega
+print 'Alpha', alpha
+print 'S1 omega distance', omega - s1
+print 'S2 omega distance', omega - s2
+print 'S2 omega distance', omega - s3
+print 'S1 alpha distance', s1 - alpha
+print 'S2 alpha distance', s2 - alpha
+print 'S2 alpha distance', s3 - alpha
+
+print 'Full X-Omega',  omega - X_ds
+print 'Full X-Omega',  X_ds - alpha
+
+o = omega - X_ds
+a = X_ds - alpha
+
+print np.where(((o >= 0) & (a >= 0)), 1, -1)
+
+
+
+print np.mean(lsvm.decision_function(X))
 
 print 'Coef', lsvm.coef_
 # print 'Dual_coef', lsvm.dual_coef_
@@ -27,7 +63,7 @@ print
 # b = -lsvm.intercept_[0] / lsvm.coef_[0,1]
 
 CV_X = np.array([
-    [-5, -1, -6],
+    [-1, -1, -3],
 ])
 # print lsvm.decision_function(CV_X)
 
