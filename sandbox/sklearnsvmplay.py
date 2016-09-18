@@ -13,9 +13,10 @@ y = np.array([0, 0, 1, 1])
 lsvm = svm.LinearSVC(penalty='l2', multi_class='ovr', dual=True)
 # lsvm = svm.SVC(kernel='linear', decision_function_shape='ovr')
 
-tX = lsvm.fit_transform(X, y)
+tX = lsvm.fit(X, y)
 
 ds = lsvm.decision_function(X)
+print 'DS', ds
 az = np.where((ds >= 0))
 lz = np.where((ds <= 0))
 

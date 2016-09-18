@@ -3,14 +3,13 @@ import numpy as np
 import sklearn.svm as svm
 
 
-
 class LinearSetSVM(object):
 
-    def __init__(self, svm_type='oneclass', l, a, b, mrgn_nw, mrgn_fw, **kwargs):
+    def __init__(self, svm_type, l, c1_w, c2_w, mrgn_nw, mrgn_fw, **kwargs):
 
         self.l = l
-        self.a = a
-        self.b = b
+        self.c1_w = c1_w
+        self.c2_w = c2_w
         self.mrgn_nw = mrgn_nw
         self.mrgn_fw = mrgn_fw
 
@@ -18,16 +17,17 @@ class LinearSetSVM(object):
 
         if self.svm_type == 'oneclass':
 
+            print "Warning: Only linear Kernel is supported in this SVM-extention method."
+            kwargs['kernel'] = 'linear'
             self.lsvm = svm.OneClassSVM(**kwargs)
 
         elif self.svm_type == 'binary':
 
-            kwargs['kernel'] != 'linear':
-                print "Warning: Only linear Kernel is supported in this SVM-extention method."
-                print "Auto-config params: penalty='l2', multi_class='ovr', dual='True'"
-                kwargs['penalty'] = 'l2'
-                kwargs['multi_class'] = 'ovr'
-                kwargs['dual'] = True
+            print "Warning: Only linear Kernel is supported in this SVM-extention method."
+            print "Auto-config params: penalty='l2', multi_class='ovr', dual='True'"
+            kwargs['penalty'] = 'l2'
+            kwargs['multi_class'] = 'ovr'
+            kwargs['dual'] = True
 
             self.lsvm = svm.LinearSVC(**kwargs)
 
@@ -37,16 +37,22 @@ class LinearSetSVM(object):
     def optimize(self, X, yp_i, yn_i, yu_i):
 
         # Making an array to matrix if not already.
-        X = np.matrix(X)
+        #X = np.matrix(X)
 
         # Training the Linear SVM, either one-class or binary
         if self.svm_type == 'oneclass':
-            lsvm.fit(X)
+
+            self.lsvm.fit(X[yp_i, :])
+
         else:
-            lsvm.fit(X, np.vstack(yp, yn))
+            y = np.zeros(yp_i.shape[0] + yn_i.shape[0], dtype=np.int)
+            y[yp_i] = 1
+            y[yn_i] = -1
+
+            self.lsvm.fit(X[np.hstack((yp_i, yn_i)), :], y)
 
         # Getting preditions of the LinearSVM for all the sampels, Postive, Negative, Uknown.
-        pds = lsvm.decision_function(X)
+        pds = self.lsvm.decision_function(X)
 
         # Sorting the predicted distances.
         pds_idxs = np.argsort(pds)
@@ -56,8 +62,8 @@ class LinearSetSVM(object):
         # equivalent to candidate SVs for the Greedy Optimization that follows. Then setting...
         # ...them as the initill Close and Far Hyperplane intial ofset position form the...
         # ...SVM hyperplane/decision function.
-        self.self.near_H_i = np.argmin(pds)
-        self.self.far_H_i = np.argmax(pds)
+        self.near_H_i = np.argmin(pds)
+        self.far_H_i = np.argmax(pds)
 
         # Getting the Decision Hyperplane's Normal vector.
         # self.N_vect = np.matrix(self.lsvm.coef_)
@@ -75,29 +81,29 @@ class LinearSetSVM(object):
 
         # Starting Greedy Optimization process
         min_Risk = np.Inf
-        for pds_i in np.random.shuffle(pds_idxs[1::]):
-            for inv_pds_i in random.shuffle(inv_pds_idxs[1::]):
+        for pds_i in pds_idxs[1::]:  # np.random.shuflle maybe ?
+            for inv_pds_i in inv_pds_idxs[1::]:
 
                 # Moving the Hyperplanes.
                 new_near = pds[pds_i]
                 new_far = pds[inv_pds_i]
 
                 # ## Calculating Constraintes ##
-                f4y_pos = self.dfunc(X[yp_i], new_near, new_far)
-                f4y_neg = self.dfunc(X[yn_i],  new_near, new_far)
+                p4y_pos = self.predictions(X[yp_i], new_near, new_far)
+                p4y_neg = self.predictions(X[yn_i], new_near, new_far)
 
-                hl_pos = np.array([np.max([0, 1.0 - f]) for f in f4y_pos])
-                hl_neg = np.array([np.max([0, 1.0 - f]) for f in f4y_neg])
+                hl_pos = np.array([np.max([0, 1.0 - f]) for f in p4y_pos])
+                hl_neg = np.array([np.max([0, 1.0 - f]) for f in p4y_neg])
 
-                cstr_1 = yp_i.shape[0]*self.a <= np.sum(hl_pos)
-                cstr_2 = yn_i.shape[0]*self.b >= np.sum(hl_neg)
+                cstr_1 = yp_i.shape[0]*self.c1_w <= np.sum(hl_pos)
+                cstr_2 = yn_i.shape[0]*self.c2_w >= np.sum(hl_neg)
 
                 if cstr_1 and cstr_2:
 
                     # ## Calculating Opt ##
 
                     # Getting prediciton fo the current position of the Hyperplanes.
-                    pre_y = self.predictions(Χ, new_near, new_far)
+                    pre_y = self.predictions(X, new_near, new_far)
 
                     # Forming the expected Y vector.
                     exp_y = np.zeros_like(pre_y)
@@ -143,26 +149,44 @@ class LinearSetSVM(object):
                     dz_from_n = dz_from_f[np.where((dz_from_f > 0))]
                     margin_N = np.min(dz_from_n)
 
-                    ds_posz = self.dfunc(X[yp_i], new_near, new_far)
+                    # BE CAREFULL self.dfunc(X[yp_i], new_near, new_far) OR
+                    ds_posz = np.sum(self.lsvm.decision_function(X[yp_i]))
+                    print ds_posz
 
                     Rs = ((margin_F - margin_N) / ds_posz) + (ds_posz / (margin_F - margin_N))
                     # Plus Margin spaces which is a bit vague...
                     Rs = self.mrgn_nw*margin_N + self.mrgn_fw*margin_F
 
-                    if min_Risk > (Rs + Re):
-                        min_Risk = Rs + Re
+                    if min_Risk > (Rs + self.l*Re):
+                        min_Risk = Rs + self.l*Re
                         self.near_H_i = pds_i
                         self.far_H_i = inv_pds_i
 
         return pds[self.near_H_i], pds[self.far_H_i]
 
-    def refine_planes(self, X, m, n, s):
+    def refine_planes(self, yp_i, yn_i):
 
-        print svm.libsvm.decision_function()
+        #
+        pds = self.lsvm.decision_function(X)
 
-        pass
+        # BE CAREFULL self.dfunc(X[yp_i], new_near, new_far) OR
+        ds_posz = np.sum(self.lsvm.decision_function(X[yp_i]))
 
-    def predictions(self, Χ, near_H, far_H):
+        if self.near_H_i > 0:
+            near_H = pds[self.near_H_i]*(0.5 - self.mrgn_nw) +\
+                pds[self.near_H_i - 1]*(self.mrgn_nw - 0.5)
+        else:
+            near_H = np.min(pds) - self.mrgn_nw*ds_posz
+
+        if self.far_H_i < (yp_i.shape[0] + yn_i.shape[0]):
+            far_H = pds[self.far_H_i]*(0.5 - self.mrgn_fw) +\
+                pds[self.far_H_i + 1]*(self.mrgn_fw - 0.5)
+        else:
+            far_H = np.max(pds) - self.mrgn_fw*ds_posz
+
+        return near_H, far_H
+
+    def predictions(self, X, near_H, far_H):
 
         dsz_N, dsz_F = self.dfunc(X, near_H, far_H)
 
@@ -177,8 +201,41 @@ class LinearSetSVM(object):
 
         return dsz_N, dsz_F
 
-    def _Rs():
-        pass
 
-    def _Re():
-        pass
+if __name__ == '__main__':
+
+    X = np.array(
+        [
+            [-2, -1],
+            [-1, -3],
+            [-2, -3],
+            [1, 1],
+            [1, 2],
+            [3, 1],
+            [3, 5],
+            [100, 10],
+            [120, 90]
+        ]
+    )
+
+    yn_i = np.array([0, 1, 2])
+    yp_i = np.array([3, 4, 5, 6])
+    yu_i = np.array([6, 7])
+
+    y = np.zeros(yn_i.shape[0] + yp_i.shape[0] + yu_i.shape[0])
+    y[yp_i] = 1.0
+    y[yn_i] = -1.0
+
+    llsvm = LinearSetSVM(
+        svm_type='oneclass', l=0.8, c1_w=0.5, c2_w=0.5, mrgn_nw=0.3, mrgn_fw=0.3,
+        # penalty='l2', multi_class='ovr', dual=True
+        nu=0.08
+    )
+
+    near_H, far_H = llsvm.optimize(X, yp_i, yn_i, yu_i)
+
+    near_H, far_H = llsvm.refine_planes(yp_i, yn_i)
+
+    print 'Data set X:', X
+    print 'Expected Y:', y
+    print 'Predicted Y', llsvm.predictions(X, near_H, far_H)
