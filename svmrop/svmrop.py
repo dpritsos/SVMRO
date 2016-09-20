@@ -38,7 +38,7 @@ class LinearSetSVM(object):
 
         # Training the Linear SVM, either one-class or binary
         if self.svm_type == 'oneclass':
-
+            print 'FIT'
             self.lsvm.fit(X[yp_i, :])
 
         else:
@@ -49,7 +49,7 @@ class LinearSetSVM(object):
             self.lsvm.fit(X[np.hstack((yp_i, yn_i)), :], y)
 
         # Getting preditions of the LinearSVM for all the sampels, Postive, Negative, Uknown.
-        self.pds = self.lsvm.decision_function(X)
+        self.pds = self.lsvm.decision_function(X[np.hstack((yp_i, yn_i)), :])
         if self.svm_type == 'oneclass':
             self.pds = np.transpose(self.pds)[0]
 
@@ -64,10 +64,17 @@ class LinearSetSVM(object):
         self.near_H_i = np.argmin(self.pds)
         self.far_H_i = np.argmax(self.pds)
 
+        print 'Optimization'
         # Starting Greedy Optimization process
         min_Risk = np.Inf
-        for pds_i in pds_idxs[1::]:  # np.random.shuflle maybe ?
-            for inv_pds_i in inv_pds_idxs[1::]:
+        c = 0
+        while c < 1:
+
+            c += 1
+            pdsidxs = np.random.permutation(pds_idxs[1::])
+            invpdsidxs = np.random.permutation(inv_pds_idxs[1::])
+
+            for pds_i, inv_pds_i in zip(pdsidxs, invpdsidxs):
 
                 # Moving the Hyperplanes.
                 new_near = self.pds[pds_i]
@@ -88,13 +95,14 @@ class LinearSetSVM(object):
                     # ## Calculating Opt ##
 
                     # Getting prediciton fo the current position of the Hyperplanes.
-                    pre_y = self.predictions(X, new_near, new_far)
+                    pre_y = np.hstack((p4y_pos, p4y_neg))
+                    # pre_y = self.predictions(X[np.hstack((yp_i, yn_i)), :], new_near, new_far)
 
                     # Forming the expected Y vector.
                     exp_y = np.zeros_like(pre_y)
                     exp_y[:] = -9
-                    exp_y[yp_i] = 1
-                    exp_y[yn_i] = -1
+                    exp_y[0:yp_i.shape[0]] = 1
+                    exp_y[yp_i.shape[0]:yn_i.shape[0]] = -1
 
                     # Calculating True Postive, False Postive and False Negative for this...
                     # ...Hyperplane setup.
@@ -126,17 +134,17 @@ class LinearSetSVM(object):
                     Re = 1.0 / 2.0*((p*r)/(p+r))
 
                     # ## Caclulating the Open Space Risk Rs ##
-                    dz_from_f = np.abs(pds - new_near)
-                    dz_from_f = dz_from_f[np.where((dz_from_f > 0))]
-                    margin_N = np.min(dz_from_f)
-
-                    dz_from_n = np.abs(pds - new_near)
-                    dz_from_n = dz_from_f[np.where((dz_from_f > 0))]
+                    dz_from_n = np.abs(self.pds - new_near)
+                    dz_from_n = dz_from_n[np.where((dz_from_n > 0))]
                     margin_N = np.min(dz_from_n)
+
+                    dz_from_f = np.abs(self.pds - new_near)
+                    dz_from_f = dz_from_f[np.where((dz_from_f > 0))]
+                    margin_F = np.min(dz_from_f)
 
                     # BE CAREFULL self.dfunc(X[yp_i], new_near, new_far) OR
                     ds_posz = np.sum(self.lsvm.decision_function(X[yp_i]))
-                    print ds_posz
+                    # print ds_posz
 
                     Rs = ((margin_F - margin_N) / ds_posz) + (ds_posz / (margin_F - margin_N))
                     # Plus Margin spaces which is a bit vague...
@@ -146,12 +154,12 @@ class LinearSetSVM(object):
                         min_Risk = Rs + self.l*Re
                         self.near_H_i = pds_i
                         self.far_H_i = inv_pds_i
-
+                    print 'Culc Done'
+        print 'Optimization Done'
         return self.pds[self.near_H_i], self.pds[self.far_H_i]
 
-    def refine_planes(self, yp_i, yn_i):
+    def refine_planes(self, X, yp_i, yn_i):
 
-        # BE CAREFULL self.dfunc(X[yp_i], new_near, new_far) OR
         ds_posz = np.sum(self.lsvm.decision_function(X[yp_i]))
 
         if self.near_H_i > 0:
@@ -172,7 +180,7 @@ class LinearSetSVM(object):
 
         dsz_N, dsz_F = self.dfunc(X, near_H, far_H)
 
-        return np.where(((dsz_N >= 0) & (dsz_F >= 0)), 1, -1), np.hstack((dsz_N, dsz_F))
+        return np.where(((dsz_N >= 0) & (dsz_F >= 0)), 1, -1), dsz_N, dsz_F
 
     def predictions(self, X, near_H, far_H):
 
