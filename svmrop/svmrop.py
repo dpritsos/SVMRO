@@ -43,8 +43,8 @@ class LinearSetSVM(object):
 
         else:
             y = np.zeros(yp_i.shape[0] + yn_i.shape[0], dtype=np.int)
-            y[yp_i] = 1
-            y[yn_i] = -1
+            y[0:yp_i.shape[0]] = 1
+            y[yp_i.shape[0]:yp_i.shape[0]+yn_i.shape[0]] = -1
 
             self.lsvm.fit(X[np.hstack((yp_i, yn_i)), :], y)
 
@@ -166,9 +166,9 @@ class LinearSetSVM(object):
             near_H = self.pds[self.near_H_i]*(0.5 - self.mrgn_nw) +\
                 self.pds[self.near_H_i - 1]*(self.mrgn_nw - 0.5)
         else:
-            near_H = np.min(pds) - self.mrgn_nw*ds_posz
+            near_H = np.min(self.pds) - self.mrgn_nw*ds_posz
 
-        if self.far_H_i < (yp_i.shape[0] + yn_i.shape[0]):
+        if (self.far_H_i+1) < (yp_i.shape[0] + yn_i.shape[0]):
             far_H = self.pds[self.far_H_i]*(0.5 - self.mrgn_fw) +\
                 self.pds[self.far_H_i + 1]*(self.mrgn_fw - 0.5)
         else:
