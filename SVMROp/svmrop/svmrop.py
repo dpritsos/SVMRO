@@ -5,9 +5,9 @@ import sklearn.svm as svm
 
 class LinearSetSVM(object):
 
-    def __init__(self, svm_type, l, c1_w, c2_w, mrgn_nw, mrgn_fw, **kwargs):
+    def __init__(self, svm_type, ll, c1_w, c2_w, mrgn_nw, mrgn_fw, **kwargs):
 
-        self.l = l
+        self.ll = ll
         self.c1_w = c1_w
         self.c2_w = c2_w
         self.mrgn_nw = mrgn_nw
@@ -150,8 +150,8 @@ class LinearSetSVM(object):
                     # Plus Margin spaces which is a bit vague...
                     Rs = self.mrgn_nw*margin_N + self.mrgn_fw*margin_F
 
-                    if min_Risk > (Rs + self.l*Re):
-                        min_Risk = Rs + self.l*Re
+                    if min_Risk > (Rs + self.ll * Re):
+                        min_Risk = Rs + self.ll * Re
                         self.near_H_i = pds_i
                         self.far_H_i = inv_pds_i
                     print 'Culc Done'
