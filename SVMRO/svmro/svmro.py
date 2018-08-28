@@ -10,15 +10,27 @@ class LinearSetSVM(object):
         arg_lst = ['mrgn_fw', 'mrgn_nw', 'c2_w', 'c1_w', 'll', 'svm_type']
 
         if args:
-            for arg in args:
+
+            if len(args) > 6:
+                cargs = [arg for arg in args[0:6]]
+                args = args[5::]
+
+            for arg in cargs:
                 self.__dict__[arg_lst.pop()] = arg
 
         if kwargs:
             for kwd, arg in kwargs.items():
                 if kwd in arg_lst:
-                    self.__dict__[arg_lst.pop()] = arg
-                else:
-                    msg = "Error - Argument " + kwd + " already given."
+
+                    self.__dict__[kwd] = arg
+
+                    arg_lst.remove(kwd)
+
+                    del kwargs[kwd]
+
+                elif kwd in self.__dict__.keys():
+                    msg = "Error - Argument " + kwd + \
+                        " already given with value: " + str(self.__dict__[kwd])
                     raise Exception(msg)
 
         if arg_lst:
@@ -39,7 +51,7 @@ class LinearSetSVM(object):
             kwargs['multi_class'] = 'ovr'
             kwargs['dual'] = True
 
-            self.lsvm = svm.LinearSVC(**kwargs)
+            self.lsvm = svm.LinearSVC(*args, **kwargs)
 
         else:
             raise Exception("Invalid option for argument 'svm_type'")
@@ -54,7 +66,7 @@ class LinearSetSVM(object):
         else:
             y = np.zeros(yp_i.shape[0] + yn_i.shape[0], dtype=np.int)
             y[0:yp_i.shape[0]] = 1
-            y[yp_i.shape[0]:yp_i.shape[0]+yn_i.shape[0]] = -1
+            y[yp_i.shape[0]:yp_i.shape[0] + yn_i.shape[0]] = -1
 
             self.lsvm.fit(X[np.hstack((yp_i, yn_i)), :], y)
 
@@ -97,8 +109,8 @@ class LinearSetSVM(object):
                 hl_pos = np.array([np.max([0, 1.0 - f]) for f in p4y_pos])
                 hl_neg = np.array([np.max([0, 1.0 - f]) for f in p4y_neg])
 
-                cstr_1 = yp_i.shape[0]*self.c1_w <= np.sum(hl_pos)
-                cstr_2 = yn_i.shape[0]*self.c2_w >= np.sum(hl_neg)
+                cstr_1 = yp_i.shape[0] * self.c1_w <= np.sum(hl_pos)
+                cstr_2 = yn_i.shape[0] * self.c2_w >= np.sum(hl_neg)
 
                 if cstr_1 and cstr_2:
 
@@ -141,7 +153,7 @@ class LinearSetSVM(object):
 
                     # Caculating Empirical Risk which is been selected to be the inverced...
                     # ...F-measure,eg F1.
-                    Re = 1.0 / 2.0*((p*r)/(p+r))
+                    Re = 1.0 / 2.0 * ((p * r) / (p + r))
 
                     # ## Caclulating the Open Space Risk Rs ##
                     dz_from_n = np.abs(self.pds - new_near)
@@ -173,16 +185,16 @@ class LinearSetSVM(object):
         ds_posz = np.sum(self.lsvm.decision_function(X[yp_i]))
 
         if self.near_H_i > 0:
-            near_H = self.pds[self.near_H_i]*(0.5 - self.mrgn_nw) +\
-                self.pds[self.near_H_i - 1]*(self.mrgn_nw - 0.5)
+            near_H = self.pds[self.near_H_i] * (0.5 - self.mrgn_nw) +\
+                self.pds[self.near_H_i - 1] * (self.mrgn_nw - 0.5)
         else:
             near_H = np.min(self.pds) - self.mrgn_nw*ds_posz
 
-        if (self.far_H_i+1) < (yp_i.shape[0] + yn_i.shape[0]):
-            far_H = self.pds[self.far_H_i]*(0.5 - self.mrgn_fw) +\
-                self.pds[self.far_H_i + 1]*(self.mrgn_fw - 0.5)
+        if (self.far_H_i + 1) < (yp_i.shape[0] + yn_i.shape[0]):
+            far_H = self.pds[self.far_H_i] * (0.5 - self.mrgn_fw) +\
+                self.pds[self.far_H_i + 1] * (self.mrgn_fw - 0.5)
         else:
-            far_H = np.max(self.pds) - self.mrgn_fw*ds_posz
+            far_H = np.max(self.pds) - self.mrgn_fw * ds_posz
 
         return near_H, far_H
 
@@ -208,6 +220,8 @@ class SVMRO(LinearSetSVM):
 
     def __init__(self, *args, **kwargs):
 
+        arg_lst = ['mrgn_fw', 'mrgn_nw', 'c2_w', 'c1_w', 'll', 'svm_type']
+
         self.gnr_classes = dict()
 
         super(SVMRO, self).__init__(*args, **kwargs)
@@ -216,89 +230,38 @@ class SVMRO(LinearSetSVM):
         # Linear penalty='l2', multi_class='ovr', dual=True
         # OneClass nu
 
-    def fit(self, trn_idxs, corpus_mtrx, cls_gnr_tgs, params):
+    def fit(self, corpus_mtrx, cls_tgs):
 
         print "TRAINING"
 
-        inds_per_gnr = dict()
-        inds = list()
-        last_gnr_tag = 1
+        for i, gnr_tag in enumerate(np.unique(cls_tgs)):
 
-        for gnr_tag in np.unique(cls_gnr_tgs[trn_idxs]):
-            inds_per_gnr[self.genres_lst[gnr_tag - 1]] = trn_idxs[
-                np.where(cls_gnr_tgs[trn_idxs] == gnr_tag)[0]
-            ]
-
-        for g, inds in inds_per_gnr.items():
-
-            """
-            # Create the OC-SVM Model for this genre
-            if params['svm_type'] == 'oneclass':
-                self.lopsvm = svmrop.LinearSetSVM(
-                    svm_type='oneclass',
-                    ll=params['ll'],
-                    c1_w=params['c1_w'], c2_w=params['c2_w'],
-                    mrgn_nw=params['mrgn_nw'], mrgn_fw=params['mrgn_fw'],
-                    nu=params['nu']
-                )
-            else:
-                self.lopsvm = svmrop.LinearSetSVM(
-                    svm_type='binary',
-                    ll=params['ll'],
-                    c1_w=params['c1_w'], c2_w=params['c2_w'],
-                    mrgn_nw=params['mrgn_nw'], mrgn_fw=params['mrgn_fw'],
-
-                )
-            """
-            # print "Fit Model for ", g
-            # print "Corpus_Mtrx", corpus_mtrx[inds_per_gnr[g], :].shape
-            # Convert TF vectors to Binary
-            # crp_arr_bin = np.where(corpus_mtrx[inds_per_gnr[g], :].toarray() > 0, 1, 0)
-
-            # ### Fitting Linear 1-vs-set SVM Model to Data of this genre. ###
+            self.ci2gtag[i] = gnr_tag
 
             # Getting the positive samples for this split
-            yp_i = inds
+            yp_i = np.where((cls_tgs == gnr_tag))
 
             # Getting some negative samples for this split.
-            # print inds_per_gnr.items()
-            # print [inds for grn, inds in inds_per_gnr.items() if grn != g]
-            yn_i = np.hstack(
-                [
-                    np.random.permutation(inds)[0:int(np.floor(inds.shape[0]/2.0))]
-                    for grn, inds in inds_per_gnr.items() if grn != g
-                ]
-            )
+            yn_i = np.random.permutation(np.where((cls_tgs != gnr_tag)))
+            yn_i = yn_i[0:int(np.floor(yn_i.shape[0]/2.0))]
 
             # Not in use yet!
             yu_i = 0
 
             # Training the SVM 1-vs-set
-            near_H, far_H = self.optimize(
-                corpus_mtrx[:, 0:params['features_size']], yp_i, yn_i, yu_i
-            )
+            near_H, far_H = self.optimize(corpus_mtrx, yp_i, yn_i, yu_i)
 
             # Refining the Hyperplanes based on the user expirience on the data set.
-            near_H, far_H = self.refine_planes(
-                corpus_mtrx[:, 0:params['features_size']], yp_i, yn_i
-            )
+            near_H, far_H = self.refine_planes(corpus_mtrx, yp_i, yn_i)
 
             # Keeping the Decision function, i.e. the decision hyperplanes for the evaluation.
-            self.gnr_classes[g] = [near_H, far_H]
+            self.gnr_classes[i] = [near_H, far_H]
 
         return self.gnr_classes
 
-    def predict(self, *args):
+    def predict(self, corpus_mtrx, crv_idxs):
 
         print 'PREDICTING'
-
-        # Get Input arguments in given sequence
-        crv_idxs = args[0]
-        corpus_mtrx = args[1]
-        params = args[2]
-
-        # Get the part of matrices or arrays required for the model prediction phase
-        crossval_X = corpus_mtrx[crv_idxs, 0:params['features_size']]
 
         # Get the part of matrices required for the model prediction phase.
         # ###crossval_Y =  cls_gnr_tgs [crv_idxs, :]
@@ -307,31 +270,32 @@ class SVMRO(LinearSetSVM):
         predicted_Y_per_gnr = list()
         predicted_d_near_per_gnr = list()
         predicted_d_far_per_gnr = list()
-        gnr_cls_idx = list()
+        # gnr_cls_idx = list()
 
-        for g in self.gnr_classes.keys():
-
-            # Converting TF vectors to Binary
-            # cv_arr_bin = np.where(crossval_X.toarray() > 0, 1, 0)
+        for i, gnr_tag in enumerate(np.unique(cls_tgs)):
 
             # Getting the predictions for each Vector for this genre
-            predicted_Y, predicted_D_near, predicted_D_far = self.lopsvm.predict(
-                crossval_X, self.gnr_classes[g][0], self.gnr_classes[g][1]
+            pre_Y_bin, preD_n, preD_f = self.predict(
+                corpus_mtrx[crv_idxs], self.gnr_classes[gnr_tag][0], self.gnr_classes[gnr_tag][1]
             )
 
             # Keeping the prediction per genre
-            predicted_Y_per_gnr.append(predicted_Y)
-            predicted_d_near_per_gnr.append(predicted_D_near)
-            predicted_d_far_per_gnr.append(predicted_D_far)
-            gnr_cls_idx.append(self.genres_lst.index(g) + 1)
+            pre_Y_bin_per_gnr.append(pre_Y_bin)
+            pre_Dn_per_gnr.append(preD_n)
+            pre_Df_per_gnr.append(preD_f)
+            # gnr_cls_idx.append(self.genres_lst.index(g) + 1)
 
         # Converting it to Array before returning
-        predicted_Y_per_gnr = np.vstack(predicted_Y_per_gnr)
-        predicted_d_near_per_gnr = np.vstack(predicted_d_near_per_gnr)
-        predicted_d_far_per_gnr = np.vstack(predicted_d_far_per_gnr)
-        gnr_cls_idx = np.hstack(gnr_cls_idx)
+        pYbin_per_gnr = np.vstack(pre_Y_bin_per_gnr).transpose()
+        pDn_per_gnr = np.vstack(pre_Dn_per_gnr).transpose()
+        pDf_per_gnr = np.vstack(pre_Df_per_gnr).transpose()
 
-        return predicted_Y_per_gnr, predicted_d_near_per_gnr, predicted_d_far_per_gnr, gnr_cls_idx
+        for binYs, dNs, dFs, enumerate(zip(pYbin_per_gnr, pDn_per_gnr, pDf_per_gnr)):
+            D_score = Dn + Df
+            predicted_Y_per_gnr
+
+        return predicted_Y_per_gnr, predicted_d_near_per_gnr, predicted_d_far_per_gnr
+        # , gnr_cls_idx
 
 
 if __name__ == '__main__':
