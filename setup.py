@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(
-    name="SVMROp",
+    name="SVMRO",
     version="0.0.1",
     author="Dimitrios Pritsos",
     author_email="dpritsos@extremepro.gr",

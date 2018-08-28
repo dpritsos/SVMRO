@@ -5,21 +5,31 @@ import sklearn.svm as svm
 
 class LinearSetSVM(object):
 
-    def __init__(self, svm_type, ll, c1_w, c2_w, mrgn_nw, mrgn_fw, **kwargs):
+    def __init__(self, *args, **kwargs):
 
-        self.ll = ll
-        self.c1_w = c1_w
-        self.c2_w = c2_w
-        self.mrgn_nw = mrgn_nw
-        self.mrgn_fw = mrgn_fw
+        arg_lst = ['mrgn_fw', 'mrgn_nw', 'c2_w', 'c1_w', 'll', 'svm_type']
 
-        self.svm_type = svm_type
+        if args:
+            for arg in args:
+                self.__dict__[arg_lst.pop()] = arg
+
+        if kwargs:
+            for kwd, arg in kwargs.items():
+                if kwd in arg_lst:
+                    self.__dict__[arg_lst.pop()] = arg
+                else:
+                    msg = "Error - Argument " + kwd + " already given."
+                    raise Exception(msg)
+
+        if arg_lst:
+            msg = "Argument(s) " + ", ".join(arg_lst) + 'missing.'
+            raise Exception(msg)
 
         if self.svm_type == 'oneclass':
 
             print "Warning: Only linear Kernel is supported in this SVM-extention method."
             kwargs['kernel'] = 'linear'
-            self.lsvm = svm.OneClassSVM(**kwargs)
+            self.lsvm = svm.OneClassSVM(*args, **kwargs)
 
         elif self.svm_type == 'binary':
 
@@ -182,12 +192,6 @@ class LinearSetSVM(object):
 
         return np.where(((dsz_N >= 0) & (dsz_F >= 0)), 1, -1), dsz_N, dsz_F
 
-    def predictions(self, X, near_H, far_H):
-
-        dsz_N, dsz_F = self.dfunc(X, near_H, far_H)
-
-        return np.where(((dsz_N >= 0) & (dsz_F >= 0)), 1, -1)
-
     def dfunc(self, X, near_H, far_H):
 
         dsz_X = self.lsvm.decision_function(X)
@@ -198,6 +202,136 @@ class LinearSetSVM(object):
         dsz_F = dsz_X - near_H
 
         return dsz_N, dsz_F
+
+
+class SVMRO(LinearSetSVM):
+
+    def __init__(self, *args, **kwargs):
+
+        self.gnr_classes = dict()
+
+        super(SVMRO, self).__init__(*args, **kwargs)
+
+        # Required params for SVM
+        # Linear penalty='l2', multi_class='ovr', dual=True
+        # OneClass nu
+
+    def fit(self, trn_idxs, corpus_mtrx, cls_gnr_tgs, params):
+
+        print "TRAINING"
+
+        inds_per_gnr = dict()
+        inds = list()
+        last_gnr_tag = 1
+
+        for gnr_tag in np.unique(cls_gnr_tgs[trn_idxs]):
+            inds_per_gnr[self.genres_lst[gnr_tag - 1]] = trn_idxs[
+                np.where(cls_gnr_tgs[trn_idxs] == gnr_tag)[0]
+            ]
+
+        for g, inds in inds_per_gnr.items():
+
+            """
+            # Create the OC-SVM Model for this genre
+            if params['svm_type'] == 'oneclass':
+                self.lopsvm = svmrop.LinearSetSVM(
+                    svm_type='oneclass',
+                    ll=params['ll'],
+                    c1_w=params['c1_w'], c2_w=params['c2_w'],
+                    mrgn_nw=params['mrgn_nw'], mrgn_fw=params['mrgn_fw'],
+                    nu=params['nu']
+                )
+            else:
+                self.lopsvm = svmrop.LinearSetSVM(
+                    svm_type='binary',
+                    ll=params['ll'],
+                    c1_w=params['c1_w'], c2_w=params['c2_w'],
+                    mrgn_nw=params['mrgn_nw'], mrgn_fw=params['mrgn_fw'],
+
+                )
+            """
+            # print "Fit Model for ", g
+            # print "Corpus_Mtrx", corpus_mtrx[inds_per_gnr[g], :].shape
+            # Convert TF vectors to Binary
+            # crp_arr_bin = np.where(corpus_mtrx[inds_per_gnr[g], :].toarray() > 0, 1, 0)
+
+            # ### Fitting Linear 1-vs-set SVM Model to Data of this genre. ###
+
+            # Getting the positive samples for this split
+            yp_i = inds
+
+            # Getting some negative samples for this split.
+            # print inds_per_gnr.items()
+            # print [inds for grn, inds in inds_per_gnr.items() if grn != g]
+            yn_i = np.hstack(
+                [
+                    np.random.permutation(inds)[0:int(np.floor(inds.shape[0]/2.0))]
+                    for grn, inds in inds_per_gnr.items() if grn != g
+                ]
+            )
+
+            # Not in use yet!
+            yu_i = 0
+
+            # Training the SVM 1-vs-set
+            near_H, far_H = self.optimize(
+                corpus_mtrx[:, 0:params['features_size']], yp_i, yn_i, yu_i
+            )
+
+            # Refining the Hyperplanes based on the user expirience on the data set.
+            near_H, far_H = self.refine_planes(
+                corpus_mtrx[:, 0:params['features_size']], yp_i, yn_i
+            )
+
+            # Keeping the Decision function, i.e. the decision hyperplanes for the evaluation.
+            self.gnr_classes[g] = [near_H, far_H]
+
+        return self.gnr_classes
+
+    def predict(self, *args):
+
+        print 'PREDICTING'
+
+        # Get Input arguments in given sequence
+        crv_idxs = args[0]
+        corpus_mtrx = args[1]
+        params = args[2]
+
+        # Get the part of matrices or arrays required for the model prediction phase
+        crossval_X = corpus_mtrx[crv_idxs, 0:params['features_size']]
+
+        # Get the part of matrices required for the model prediction phase.
+        # ###crossval_Y =  cls_gnr_tgs [crv_idxs, :]
+
+        # Initialize Predicted-Classes-Arrays List
+        predicted_Y_per_gnr = list()
+        predicted_d_near_per_gnr = list()
+        predicted_d_far_per_gnr = list()
+        gnr_cls_idx = list()
+
+        for g in self.gnr_classes.keys():
+
+            # Converting TF vectors to Binary
+            # cv_arr_bin = np.where(crossval_X.toarray() > 0, 1, 0)
+
+            # Getting the predictions for each Vector for this genre
+            predicted_Y, predicted_D_near, predicted_D_far = self.lopsvm.predict(
+                crossval_X, self.gnr_classes[g][0], self.gnr_classes[g][1]
+            )
+
+            # Keeping the prediction per genre
+            predicted_Y_per_gnr.append(predicted_Y)
+            predicted_d_near_per_gnr.append(predicted_D_near)
+            predicted_d_far_per_gnr.append(predicted_D_far)
+            gnr_cls_idx.append(self.genres_lst.index(g) + 1)
+
+        # Converting it to Array before returning
+        predicted_Y_per_gnr = np.vstack(predicted_Y_per_gnr)
+        predicted_d_near_per_gnr = np.vstack(predicted_d_near_per_gnr)
+        predicted_d_far_per_gnr = np.vstack(predicted_d_far_per_gnr)
+        gnr_cls_idx = np.hstack(gnr_cls_idx)
+
+        return predicted_Y_per_gnr, predicted_d_near_per_gnr, predicted_d_far_per_gnr, gnr_cls_idx
 
 
 if __name__ == '__main__':
