@@ -71,8 +71,6 @@ class LinearSetSVM(object):
             self.lsvm.fit(X[np.hstack((yp_i, yn_i)), :], y)
 
         # Getting preditions of the LinearSVM for all the sampels, Postive, Negative, Uknown.
-        print 'OPTIMIZE'
-        print yp_i.shape, yn_i.shape
         self.pds = self.lsvm.decision_function(X[np.hstack((yp_i, yn_i)), :])
         if self.svm_type == 'oneclass':
             self.pds = np.transpose(self.pds)[0]
@@ -105,8 +103,8 @@ class LinearSetSVM(object):
                 new_far = self.pds[inv_pds_i]
 
                 # ## Calculating Constraintes ##
-                p4y_pos = self.predictions(X[yp_i], new_near, new_far)
-                p4y_neg = self.predictions(X[yn_i], new_near, new_far)
+                p4y_pos = self.predict__(X[yp_i], new_near, new_far)[0]
+                p4y_neg = self.predict__(X[yn_i], new_near, new_far)[0]
 
                 hl_pos = np.array([np.max([0, 1.0 - f]) for f in p4y_pos])
                 hl_neg = np.array([np.max([0, 1.0 - f]) for f in p4y_neg])
@@ -200,7 +198,7 @@ class LinearSetSVM(object):
 
         return near_H, far_H
 
-    def predict(self, X, near_H, far_H):
+    def predict__(self, X, near_H, far_H):
 
         dsz_N, dsz_F = self.dfunc(X, near_H, far_H)
 
@@ -274,11 +272,11 @@ class SVMRO(LinearSetSVM):
         pre_Dn_per_gnr = list()
         pre_Df_per_gnr = list()
 
-        for i, gnr_tag in enumerate(np.unique(cls_tgs)):
+        for i in np.arange(len(self.ci2gtag)):
 
             # Getting the predictions for each Vector for this genre
-            pre_Y_bin, preD_n, preD_f = self.predict(
-                corpus_mtrx, self.gnr_classes[gnr_tag][0], self.gnr_classes[gnr_tag][1]
+            pre_Y_bin, preD_n, preD_f = self.predict__(
+                corpus_mtrx, self.gnr_classes[i][0], self.gnr_classes[i][1]
             )
 
             # Keeping the prediction per genre
@@ -293,19 +291,16 @@ class SVMRO(LinearSetSVM):
 
         # MAX
         D_scores = pDn_per_gnr + pDf_per_gnr
-        maxD_i = np.argmax(D_score, axis=1)
+        maxD_i = np.argmax(D_scores, axis=0)
         maxScore_Cls = np.array([self.ci2gtag[i] for i in maxD_i])
 
-        print D_scores.shape
-        print maxD_i.shape
-        print maxScore_Cls.shape
+        predicted_Y = np.zeros(pYbin_per_gnr.shape[1])
 
-        predicted_Y = np.zeros_like(pYbin_per_gnr)
+        posPred_j = np.unique(np.where((pYbin_per_gnr > 0))[1])
 
-        predicted_Y[maxD_i, np.where((pYbin_per_gnr > 0))] = maxScore_Cls
+        predicted_Y[posPred_j] = maxScore_Cls[posPred_j]
 
-        return predicted_Y_per_gnr, pDf_per_gnr, pDn_per_gnr, D_scores
-        # , gnr_cls_idx
+        return predicted_Y, pDf_per_gnr, pDn_per_gnr, np.max(D_scores, axis=0)
 
 
 if __name__ == '__main__':
