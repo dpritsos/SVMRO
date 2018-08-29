@@ -58,9 +58,9 @@ class LinearSetSVM(object):
 
     def optimize(self, X, yp_i, yn_i, yu_i):
 
+        print 'FIT SKLEARN SVM'
         # Training the Linear SVM, either one-class or binary
         if self.svm_type == 'oneclass':
-            print 'FIT'
             self.lsvm.fit(X[yp_i, :])
 
         else:
@@ -71,6 +71,8 @@ class LinearSetSVM(object):
             self.lsvm.fit(X[np.hstack((yp_i, yn_i)), :], y)
 
         # Getting preditions of the LinearSVM for all the sampels, Postive, Negative, Uknown.
+        print 'OPTIMIZE'
+        print yp_i.shape, yn_i.shape
         self.pds = self.lsvm.decision_function(X[np.hstack((yp_i, yn_i)), :])
         if self.svm_type == 'oneclass':
             self.pds = np.transpose(self.pds)[0]
@@ -222,6 +224,7 @@ class SVMRO(LinearSetSVM):
 
         arg_lst = ['mrgn_fw', 'mrgn_nw', 'c2_w', 'c1_w', 'll', 'svm_type']
 
+        self.ci2gtag = dict()
         self.gnr_classes = dict()
 
         super(SVMRO, self).__init__(*args, **kwargs)
@@ -239,11 +242,11 @@ class SVMRO(LinearSetSVM):
             self.ci2gtag[i] = gnr_tag
 
             # Getting the positive samples for this split
-            yp_i = np.where((cls_tgs == gnr_tag))
+            yp_i = np.where((cls_tgs == gnr_tag))[0]
 
             # Getting some negative samples for this split.
-            yn_i = np.random.permutation(np.where((cls_tgs != gnr_tag)))
-            yn_i = yn_i[0:int(np.floor(yn_i.shape[0]/2.0))]
+            yn_i = np.random.permutation(np.where((cls_tgs != gnr_tag))[0])
+            yn_i = yn_i[0:int(np.floor(yn_i.size / 2.0))]
 
             # Not in use yet!
             yu_i = 0
@@ -259,7 +262,7 @@ class SVMRO(LinearSetSVM):
 
         return self.gnr_classes
 
-    def predict(self, corpus_mtrx, crv_idxs):
+    def predict(self, corpus_mtrx):
 
         print 'PREDICTING'
 
@@ -267,34 +270,41 @@ class SVMRO(LinearSetSVM):
         # ###crossval_Y =  cls_gnr_tgs [crv_idxs, :]
 
         # Initialize Predicted-Classes-Arrays List
-        predicted_Y_per_gnr = list()
-        predicted_d_near_per_gnr = list()
-        predicted_d_far_per_gnr = list()
-        # gnr_cls_idx = list()
+        pre_Y_bin_per_gnr = list()
+        pre_Dn_per_gnr = list()
+        pre_Df_per_gnr = list()
 
         for i, gnr_tag in enumerate(np.unique(cls_tgs)):
 
             # Getting the predictions for each Vector for this genre
             pre_Y_bin, preD_n, preD_f = self.predict(
-                corpus_mtrx[crv_idxs], self.gnr_classes[gnr_tag][0], self.gnr_classes[gnr_tag][1]
+                corpus_mtrx, self.gnr_classes[gnr_tag][0], self.gnr_classes[gnr_tag][1]
             )
 
             # Keeping the prediction per genre
             pre_Y_bin_per_gnr.append(pre_Y_bin)
             pre_Dn_per_gnr.append(preD_n)
             pre_Df_per_gnr.append(preD_f)
-            # gnr_cls_idx.append(self.genres_lst.index(g) + 1)
 
         # Converting it to Array before returning
-        pYbin_per_gnr = np.vstack(pre_Y_bin_per_gnr).transpose()
-        pDn_per_gnr = np.vstack(pre_Dn_per_gnr).transpose()
-        pDf_per_gnr = np.vstack(pre_Df_per_gnr).transpose()
+        pYbin_per_gnr = np.vstack(pre_Y_bin_per_gnr)
+        pDn_per_gnr = np.vstack(pre_Dn_per_gnr)
+        pDf_per_gnr = np.vstack(pre_Df_per_gnr)
 
-        for binYs, dNs, dFs, enumerate(zip(pYbin_per_gnr, pDn_per_gnr, pDf_per_gnr)):
-            D_score = Dn + Df
-            predicted_Y_per_gnr
+        # MAX
+        D_scores = pDn_per_gnr + pDf_per_gnr
+        maxD_i = np.argmax(D_score, axis=1)
+        maxScore_Cls = np.array([self.ci2gtag[i] for i in maxD_i])
 
-        return predicted_Y_per_gnr, predicted_d_near_per_gnr, predicted_d_far_per_gnr
+        print D_scores.shape
+        print maxD_i.shape
+        print maxScore_Cls.shape
+
+        predicted_Y = np.zeros_like(pYbin_per_gnr)
+
+        predicted_Y[maxD_i, np.where((pYbin_per_gnr > 0))] = maxScore_Cls
+
+        return predicted_Y_per_gnr, pDf_per_gnr, pDn_per_gnr, D_scores
         # , gnr_cls_idx
 
 
